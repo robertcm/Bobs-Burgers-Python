@@ -14,19 +14,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import json
 
 from google.appengine.ext import db
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp import util
 
+admin_password = "bobby"
 
 class MainHandler(webapp.RequestHandler):
     def get(self):
         self.response.out.write('Hello world!')
 
+class AuthHandler(webapp.RequestHandler):
+    def post(self):
+        password = self.request.get('password')
+        if password==admin_password:
+            json_dict = {
+                'success': True,
+            }
+            self.response.out.write(json.dumps(json_dict))
+        else:
+            json_dict = {
+                'success': False,
+            }
+            self.response.out.write(json.dumps(json_dict))
 
 def main():
-    application = webapp.WSGIApplication([('/', MainHandler)],
+    application = webapp.WSGIApplication([('/', MainHandler),
+                                          ('/auth', AuthHandler)],
                                          debug=True)
     util.run_wsgi_app(application)
 
