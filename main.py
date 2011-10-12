@@ -263,6 +263,53 @@ class ItemImageHandler(webapp.RequestHandler):
             self.response.out.write(item.image)
         else:
             self.response.out.write('no good')
+
+class BatchRaisePricesHandler(webapp.RequestHandler):
+    def post(self):
+        json_dict = json.loads(self.request.body)
+        password = json_dict['password']
+        if password!=admin_password:
+            json_resp = {
+                'success':False,
+                'message':'Not authorized',
+            }
+            self.response.out.write(json.dumps(json_resp))
+        else:
+            location_name = json_dict['location']
+            value = float(json_dict['price'])
+            location = Location.get_by_key_name(location_name)
+            if location:
+                tosave = []
+                menu_items = MenuItem.all(keys_only=False).ancestor(location)
+                for item in menu_items:
+                    item.price = item.price + value
+                    tosave.append(item)
+                db.put(tosave)
+                json_resp = {
+                    'success':True,
+                }
+                self.response.out.write(json.dumps(json_resp))
+
+class BatchRemoveImagesHandler(webapp.RequestHandler):
+    def post(self):
+        json_dict = json.loads(self.request.body)
+        password = json_dict['password']
+        if password!=admin_password:
+            json_resp = {
+                'success':False,
+                'message':'Not authorized',
+            }
+            self.response.out.write(json.dumps(json_resp))
+        else:
+            location_name = json_dict['location']
+            location = Location.get_by_key_name(location_name)
+            if location:
+                tosave = []
+                menu_items = MenuItem.all(keys_only=False).ancestor(location)
+                for item in menu_items:
+                    item.image = None
+                    tosave.append(item)
+                db.put(tosave)
             
 def main():
     application = webapp.WSGIApplication([('/', MainHandler),
@@ -270,7 +317,9 @@ def main():
                                           ('/locations', LocationsHandler),
                                           (r'/locations/([^/]*)', SingleLocationHandler),
                                           (r'/locations/([^/]*)/([^/]*)', ItemHandler),
-                                          (r'/locations/([^/]*)/([^/]*)/image', ItemImageHandler)],
+                                          (r'/locations/([^/]*)/([^/]*)/image', ItemImageHandler),
+                                          ('/batch/raise_prices', BatchRaisePricesHandler),
+                                          ('/batch/remove_images', BatchRemoveImagesHandler)],
                                          debug=True)
     util.run_wsgi_app(application)
 
