@@ -23,7 +23,12 @@ from google.appengine.ext.webapp import util
 
 admin_password = "bobby"
 
-#Database Objects
+"""
+Database Objects
+    I decided to use the object name property as it's key. This makes the URI scheme very human
+    readable, but makes it a bit harder to change the name. In many cases it would be better to use a
+    random unique key rather.
+"""
 class Location(db.Model):
     name = db.StringProperty(required=True)
     
@@ -34,10 +39,16 @@ class MenuItem(db.Model):
     category = db.StringProperty()
     image = db.BlobProperty()
 
+"""
+Request Handlers
+    all POST, PUT, and DELETE requests are authenticated against the 'admin_password'.
+    normally I'd use a random session token to authenticate rather than a static password.
+"""
+# /
 class MainHandler(webapp.RequestHandler):
     def get(self):
         self.response.out.write('Hello world!')
-
+# /auth
 class AuthHandler(webapp.RequestHandler):
     def post(self):
         password = self.request.get('password')
@@ -51,8 +62,9 @@ class AuthHandler(webapp.RequestHandler):
                 'success': False,
             }
             self.response.out.write(json.dumps(json_dict))
-
+# /locations
 class LocationsHandler(webapp.RequestHandler):
+    # outputs list of locations in json
     def get(self):
         query = Location.all(keys_only=True)
         locations_list = list(key.name() for key in query)
@@ -62,6 +74,7 @@ class LocationsHandler(webapp.RequestHandler):
             'Locations':locations_list,
         }
         self.response.out.write(json.dumps(json_dict))
+    # adds a location
     def post(self):
         json_body = json.loads(self.request.body)
         password = json_body['password']
@@ -92,8 +105,9 @@ class LocationsHandler(webapp.RequestHandler):
     def delete(self):
         #delete all locations 
     """
-            
+# /locations/[location_name]
 class SingleLocationHandler(webapp.RequestHandler):
+    # outputs location name and list of menu items in json
     def get(self, location_name):
         location = Location.get_by_key_name(location_name)
         if location:
@@ -115,7 +129,11 @@ class SingleLocationHandler(webapp.RequestHandler):
                 'message': 'Could not find that location',
             }
             self.response.out.write(json.dumps(json_dict))
+    # adds menu item to a location
     def post(self, location_name):
+        json_dict = json.loads(self.request.get('json'))
+        password = json_dict['password']
+        if (password!=admin_password): return
         location = Location.get_by_key_name(location_name)
         if not location:
             json_dict = {
@@ -124,12 +142,14 @@ class SingleLocationHandler(webapp.RequestHandler):
             }
             self.response.out.write(json.dumps(json_dict))
             return
-        json_dict = json.loads(self.request.get('json'))
+        # retrieve all the json info
         item_name = json_dict['name']
         item_category = json_dict['category']
         item_price = float(json_dict['price'])
+        # create item key
         item_key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
         menu_item = MenuItem.get(item_key)
+        # if item already exists, output error
         if menu_item:
             json_dict = {
                 'success': False,
@@ -137,23 +157,23 @@ class SingleLocationHandler(webapp.RequestHandler):
             }
             self.response.out.write(json.dumps(json_dict))
             return
-        
-        item_image = self.request.get('image')
         logging.info(json_dict)
+        # create new MenuItem with key
         menu_item = MenuItem(parent=location.key(), key_name=item_key.name())
         menu_item.name = item_name
         menu_item.price = item_price
         menu_item.category = item_category
+        # retrieve image data and convert to AppEngine blob
+        item_image = self.request.get('image')
         menu_item.image = db.Blob(item_image)
         menu_item.put()
         json_dict = {
             'success': True,
         }
         self.response.out.write(json.dumps(json_dict))
-        
+    # deletes location  
     def delete(self, location_name):
         json_body = json.loads(self.request.body)
-        #check password
         password = json_body['password']
         if (password!=admin_password): return
         location = Location.get_by_key_name(location_name)
@@ -172,8 +192,14 @@ class SingleLocationHandler(webapp.RequestHandler):
                 'message': 'Location does not exist',
             }
             self.response.out.write(json.dumps(json_dict))
-            
+    """
+    NOT IMPLEMENTED
+    def put(self):
+        #replace all menu items
+    """
+# /locations/[location_name]/[item_name]
 class ItemHandler(webapp.RequestHandler):
+    # outputs single item in json
     def get(self, location_name, item_name):
         location_name = urllib.unquote(location_name)
         item_name = urllib.unquote(item_name)
@@ -193,7 +219,11 @@ class ItemHandler(webapp.RequestHandler):
                 'message':'Could not find menu item'
             }
             self.response.out.write(json.dumps(json_dict))
+    # updates single, existing item
     def post(self, location_name, item_name):
+        json_dict = json.loads(self.request.get('json'))
+        password = json_dict['password']
+        if (password!=admin_password): return
         location_name = urllib.unquote(location_name)
         item_name = urllib.unquote(item_name)
         key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
@@ -206,7 +236,6 @@ class ItemHandler(webapp.RequestHandler):
             self.response.out.write(json.dumps(json_dict))
             return
         if item:
-            json_dict = json.loads(self.request.get('json'))
             #first check if the new name already exists, if not we can't change this item
             new_key = db.Key.from_path('Location', location_name, 'MenuItem', json_dict['name'])
             if json_dict['name']!=item_name:
@@ -230,6 +259,7 @@ class ItemHandler(webapp.RequestHandler):
             'success': True,
         }
         self.response.out.write(json.dumps(json_dict))
+    # deletes single item
     def delete(self, location_name, item_name):
         json_body = json.loads(self.request.body)
         #check password, should return some json here
@@ -251,8 +281,14 @@ class ItemHandler(webapp.RequestHandler):
                 'message':'Item does not exist'
            }
            self.response.out.write(json.dumps(json_dict)) 
-            
+    """
+    NOT IMPLEMENTED
+    def put(self):
+        #updating a menu item should probably go here, but it's easier to handle image uploads with a post request
+    """
+# /locations/[location_name]/[item_name]/image
 class ItemImageHandler(webapp.RequestHandler):
+    # serves image content
     def get(self, location_name, item_name):
         location_name = urllib.unquote(location_name)
         item_name = urllib.unquote(item_name)
@@ -264,6 +300,7 @@ class ItemImageHandler(webapp.RequestHandler):
         else:
             self.response.out.write('no good')
 
+# /batch/raise_prices
 class BatchRaisePricesHandler(webapp.RequestHandler):
     def post(self):
         json_dict = json.loads(self.request.body)
@@ -279,17 +316,20 @@ class BatchRaisePricesHandler(webapp.RequestHandler):
             value = float(json_dict['price'])
             location = Location.get_by_key_name(location_name)
             if location:
+                #create list for batch put
                 tosave = []
                 menu_items = MenuItem.all(keys_only=False).ancestor(location)
                 for item in menu_items:
                     item.price = item.price + value
                     tosave.append(item)
+                #batch put
                 db.put(tosave)
                 json_resp = {
                     'success':True,
                 }
                 self.response.out.write(json.dumps(json_resp))
 
+# /batch/remove_images
 class BatchRemoveImagesHandler(webapp.RequestHandler):
     def post(self):
         json_dict = json.loads(self.request.body)
@@ -304,12 +344,25 @@ class BatchRemoveImagesHandler(webapp.RequestHandler):
             location_name = json_dict['location']
             location = Location.get_by_key_name(location_name)
             if location:
+                #create list for batch put
                 tosave = []
                 menu_items = MenuItem.all(keys_only=False).ancestor(location)
                 for item in menu_items:
                     item.image = None
                     tosave.append(item)
+                #batch put
                 db.put(tosave)
+                json_resp = {
+                    'success':True,
+                }
+                self.response.out.write(json.dumps(json_resp))
+            else:
+                json_resp = {
+                    'success':False,
+                    'message':'Location does not exist',
+                }
+                self.response.out.write(json.dumps(json_resp))
+            
             
 def main():
     application = webapp.WSGIApplication([('/', MainHandler),
