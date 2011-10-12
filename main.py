@@ -145,7 +145,7 @@ class SingleLocationHandler(webapp.RequestHandler):
         # retrieve all the json info
         item_name = json_dict['name']
         item_category = json_dict['category']
-        item_price = float(json_dict['price'])
+        item_price = float("%.2f" % float(json_dict['price']))
         # create item key
         item_key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
         menu_item = MenuItem.get(item_key)
@@ -252,7 +252,7 @@ class ItemHandler(webapp.RequestHandler):
                 item = MenuItem(parent=db.Key.from_path('Location', location_name), key_name=json_dict['name'])
             item.name = json_dict['name']
             item.category = json_dict['category']
-            item.price = float(json_dict['price'])
+            item.price = float("%.2f" % float(json_dict['price']))
             item.image = db.Blob(self.request.get('image'))
             item.put()
         json_dict = {
