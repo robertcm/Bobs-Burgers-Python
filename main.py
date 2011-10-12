@@ -30,6 +30,8 @@ class MenuItem(db.Model):
     location = db.ReferenceProperty(Location, collection_name='menu_items')
     name = db.StringProperty()
     price = db.FloatProperty()
+    category = db.StringProperty()
+    image = db.BlobProperty()
 
 class MainHandler(webapp.RequestHandler):
     def get(self):
@@ -54,16 +56,109 @@ class LocationsHandler(webapp.RequestHandler):
         query = Location.all(keys_only=True)
         locations_list = list(key.name() for key in query)
         locations_list.sort()
-        self.response.out.write(json.dumps(locations_list))
-        
+        json_dict = {
+            'success': True,
+            'Locations':locations_list,
+        }
+        self.response.out.write(json.dumps(json_dict))
     def post(self):
-        password = self.request.get('password')
+        json_body = json.loads(self.request.body)
+        password = json_body['password']
         if (password!=admin_password): return
-        location_name = self.request.get('name')
+        location_name = json_body['name']
         location = Location.get_by_key_name(location_name)
         if not location:
             location = Location(key_name=location_name, name=location_name)
             location.put()
+            query = Location.all(keys_only=True)
+            locations_list = list(key.name() for key in query)
+            locations_list.sort()
+            json_dict = {
+                'success': True,
+                'Locations':locations_list,
+            }
+            self.response.out.write(json.dumps(json_dict))
+        else:
+            json_dict = {
+                'success': False,
+                'message': "Location exists"
+            }
+            self.response.out.write(json.dumps(json_dict))
+    """
+    NOT IMPLEMENTED
+    def put(self):
+        #replace all locations
+    def delete(self):
+        #delete all locations 
+    """
+            
+class SingleLocationHandler(webapp.RequestHandler):
+    def get(self, location_name):
+        location = Location.get_by_key_name(location_name)
+        if location:
+            items_query = MenuItem.all(keys_only=False).ancestor(location)
+            items_list = []
+            for item in items_query:
+                items_list.append({'name':item.name(), 'price':item.price(), 'category':item.category()})
+            json_dict = {          
+                'success': True,
+                'name': location_name,
+                'items': items_list
+            }
+            self.response.out.write(json.dumps(json_dict))
+        else:
+            json_dict = {
+                'success': False,
+                'message': 'Could not find that location',
+            }
+            self.response.out.write(json.dumps(json_dict))
+    def post(self, location_name):
+        location = Location.get_by_key_name(location_name)
+        if not location:
+            json_dict = {
+                'success': False,
+                'message': 'Could not find that location',
+            }
+            self.response.out.write(json.dumps(json_dict))
+            return
+        json_dict = json.loads(self.request.get('json'))
+        item_name = json_dict['name']
+        item_category = json_dict['category']
+        item_price = float(json_dict['price'])
+        item_key = db.Key.from_path(location_name, item_name)
+        menu_item = MenuItem.get(item_key)
+        if menu_item:
+            json_dict = {
+                'success': False,
+                'message': 'Item exists with that name, try editing the previous item instead',
+            }
+            self.response.out.write(json.dumps(json_dict))
+            return
+        
+        item_image = self.request.get('image')
+        logging.info(json_dict)
+        menu_item = MenuItem(parent=location.key(), key_name=item_key.name())
+        menu_item.name = item_name
+        menu_item.price = item_price
+        menu_item.category = item_category
+        menu_item.image = db.Blob(item_image)
+        menu_item.put()
+        json_dict = {
+            'success': True,
+        }
+        self.response.out.write(json.dumps(json_dict))
+        
+    def delete(self, location_name):
+        json_body = json.loads(self.request.body)
+        #check password
+        password = json_body['password']
+        if (password!=admin_password): return
+        location = Location.get_by_key_name(location_name)
+        if location:
+            child_query = MenuItem.all(keys_only=True).ancestor(location)
+            to_delete = list(key.name() for key in child_query)
+            to_delete.append(location)
+            db.delete(to_delete)
             json_dict = {
                 'success': True,
             }
@@ -71,14 +166,15 @@ class LocationsHandler(webapp.RequestHandler):
         else:
             json_dict = {
                 'success': False,
-                'reason': "Location exists"
+                'message': 'Location does not exist',
             }
             self.response.out.write(json.dumps(json_dict))
-
+            
 def main():
     application = webapp.WSGIApplication([('/', MainHandler),
                                           ('/auth', AuthHandler),
-                                          ('/locations', LocationsHandler)],
+                                          ('/locations', LocationsHandler),
+                                          (r'/locations/(.*)', SingleLocationHandler)],
                                          debug=True)
     util.run_wsgi_app(application)
 
