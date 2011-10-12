@@ -16,6 +16,7 @@
 #
 import json
 import logging
+import urllib
 from google.appengine.ext import db
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp import util
@@ -97,13 +98,15 @@ class SingleLocationHandler(webapp.RequestHandler):
         location = Location.get_by_key_name(location_name)
         if location:
             items_query = MenuItem.all(keys_only=False).ancestor(location)
-            items_list = []
+            items_dict= {}
             for item in items_query:
-                items_list.append({'name':item.name(), 'price':item.price(), 'category':item.category()})
+                if not items_dict.has_key(item.category):
+                    items_dict[item.category] = [] 
+                items_dict[item.category].append({'name':item.name, 'price':str(item.price), 'category':item.category})
             json_dict = {          
                 'success': True,
                 'name': location_name,
-                'items': items_list
+                'items': items_dict
             }
             self.response.out.write(json.dumps(json_dict))
         else:
@@ -125,7 +128,7 @@ class SingleLocationHandler(webapp.RequestHandler):
         item_name = json_dict['name']
         item_category = json_dict['category']
         item_price = float(json_dict['price'])
-        item_key = db.Key.from_path(location_name, item_name)
+        item_key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
         menu_item = MenuItem.get(item_key)
         if menu_item:
             json_dict = {
@@ -170,11 +173,104 @@ class SingleLocationHandler(webapp.RequestHandler):
             }
             self.response.out.write(json.dumps(json_dict))
             
+class ItemHandler(webapp.RequestHandler):
+    def get(self, location_name, item_name):
+        location_name = urllib.unquote(location_name)
+        item_name = urllib.unquote(item_name)
+        key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
+        item = MenuItem.get(key)
+        if item:
+            json_dict = {
+                'success':True,
+                'name':item.name,
+                'category':item.category,
+                'price':str(item.price)
+            }
+            self.response.out.write(json.dumps(json_dict))
+        else:
+            json_dict = {
+                'success':False,
+                'message':'Could not find menu item'
+            }
+            self.response.out.write(json.dumps(json_dict))
+    def post(self, location_name, item_name):
+        location_name = urllib.unquote(location_name)
+        item_name = urllib.unquote(item_name)
+        key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
+        item = MenuItem.get(key)
+        if not item:
+            json_dict = {
+                'success': False,
+                'message':'Item does not exist'
+            }
+            self.response.out.write(json.dumps(json_dict))
+            return
+        if item:
+            json_dict = json.loads(self.request.get('json'))
+            #first check if the new name already exists, if not we can't change this item
+            new_key = db.Key.from_path('Location', location_name, 'MenuItem', json_dict['name'])
+            if json_dict['name']!=item_name:
+                new_item = MenuItem.get(new_key)
+                if new_item:
+                    json_dict = {
+                                 'success': False,
+                                 'message':'Name already taken'
+                    }
+                    self.response.out.write(json.dumps(json_dict))
+                    return
+                #cannot change key names in app engine datastore so we have to delete and remake
+                item.delete()
+                item = MenuItem(parent=db.Key.from_path('Location', location_name), key_name=json_dict['name'])
+            item.name = json_dict['name']
+            item.category = json_dict['category']
+            item.price = float(json_dict['price'])
+            item.image = db.Blob(self.request.get('image'))
+            item.put()
+        json_dict = {
+            'success': True,
+        }
+        self.response.out.write(json.dumps(json_dict))
+    def delete(self, location_name, item_name):
+        json_body = json.loads(self.request.body)
+        #check password, should return some json here
+        password = json_body['password']
+        if (password!=admin_password): return
+        location_name = urllib.unquote(location_name)
+        item_name = urllib.unquote(item_name)
+        key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
+        item = MenuItem.get(key)
+        if item:
+            item.delete()
+            json_dict = {
+                'success': True,
+            }
+            self.response.out.write(json.dumps(json_dict))
+        else:
+           json_dict = {
+                'success': False,
+                'message':'Item does not exist'
+           }
+           self.response.out.write(json.dumps(json_dict)) 
+            
+class ItemImageHandler(webapp.RequestHandler):
+    def get(self, location_name, item_name):
+        location_name = urllib.unquote(location_name)
+        item_name = urllib.unquote(item_name)
+        key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
+        item = MenuItem.get(key)
+        if item:
+            self.response.headers['Content-Type'] = "image/jpeg"
+            self.response.out.write(item.image)
+        else:
+            self.response.out.write('no good')
+            
 def main():
     application = webapp.WSGIApplication([('/', MainHandler),
                                           ('/auth', AuthHandler),
                                           ('/locations', LocationsHandler),
-                                          (r'/locations/(.*)', SingleLocationHandler)],
+                                          (r'/locations/([^/]*)', SingleLocationHandler),
+                                          (r'/locations/([^/]*)/([^/]*)', ItemHandler),
+                                          (r'/locations/([^/]*)/([^/]*)/image', ItemImageHandler)],
                                          debug=True)
     util.run_wsgi_app(application)
 
