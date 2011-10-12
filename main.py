@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-import json
+from django.utils import simplejson as json
 import logging
 import urllib
 from google.appengine.ext import db
@@ -86,6 +86,8 @@ class LocationsHandler(webapp.RequestHandler):
             location.put()
             query = Location.all(keys_only=True)
             locations_list = list(key.name() for key in query)
+            if location_name not in locations_list:
+                locations_list.append(location_name)
             locations_list.sort()
             json_dict = {
                 'success': True,
@@ -173,9 +175,13 @@ class SingleLocationHandler(webapp.RequestHandler):
         self.response.out.write(json.dumps(json_dict))
     # deletes location  
     def delete(self, location_name):
+        """
+        #Currently, AppEngine does not accept bodies on http DELETE requests
+        #This is an odd behavior, because it works on the development server... just not in production
         json_body = json.loads(self.request.body)
         password = json_body['password']
         if (password!=admin_password): return
+        """
         location = Location.get_by_key_name(location_name)
         if location:
             child_query = MenuItem.all(keys_only=True).ancestor(location)
@@ -261,10 +267,13 @@ class ItemHandler(webapp.RequestHandler):
         self.response.out.write(json.dumps(json_dict))
     # deletes single item
     def delete(self, location_name, item_name):
+        """
+        #Currently, AppEngine does not accept bodies on http DELETE requests
+        #This is an odd behavior, because it works on the development server... just not in production
         json_body = json.loads(self.request.body)
-        #check password, should return some json here
         password = json_body['password']
         if (password!=admin_password): return
+        """
         location_name = urllib.unquote(location_name)
         item_name = urllib.unquote(item_name)
         key = db.Key.from_path('Location', location_name, 'MenuItem', item_name)
